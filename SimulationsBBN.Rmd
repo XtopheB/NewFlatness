@@ -1,0 +1,1062 @@
+---
+title: "Do risk preferences really matter? The case of pesticide use in agriculture"
+author: "Christophe Bontemps, Douadia Bougherara, Céline Nauges"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+
+output: 
+  html_document:
+    code_folding: hide
+    number_sections: TRUE
+    theme: lumen
+    highlight: tango
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( message = FALSE, warning = FALSE, echo = FALSE) 
+
+```
+# Simulations framework 
+## Initialization
+
+We use some standard packages for doing the simulations. These packages can be downloaded simply by uncommenting the first lines of the next code chunk.
+
+```{r packages}
+
+# Uncomment the following line to install the packages if not already installed
+# install.packages( c("dplyr", "ggplot2", "purrr", "spatstat.utils", "stargazer"))
+
+#Packages used in this simulation
+library(dplyr)
+library(ggplot2)
+library(purrr)
+library(spatstat.utils) # for revcumsum
+library(stargazer)
+
+```
+ 
+We created several functions for 
+* computing utility (CRRA and CPT) and 
+* for computing the optimal input use and risk premium in different cases. 
+The functions are defined in a separate R file that must be loaded. 
+
+```{r}
+source("GlobalFunctions.R")
+```
+
+
+
+To account for uncertainty in the empirical analysis to follow we assume that the random shock follows a standardized normal distribution and we derive the discrete analogue of the continuous N(0,1) by considering 1,000 normally distributed $\epsilon_i$ (i=1, 2 … 1000) over a large support.
+
+### Simulation parameters
+
+```{r,  echo = TRUE}
+# Parameters of the simulation [Numbers can be changed below]
+N.eps <- 1000  
+# Computing epsilons data.frame
+Epsilons <- GenEpsilon(Neps = N.eps)
+
+```
+
+### Input simulation values
+
+we consider possible values for $x$ varying from 1 to 400 EUR for one hectare.
+
+```{r Epsilons,  echo = TRUE}
+
+## Generation of simulated Xi (input) over the support [0,400] [values can be changed here]
+suppmin <- 0
+suppmax <- 400  # Defines the length of the support for inputs [0, suppmax]
+
+Ns <- 400     # Number of points of the computaion grid for the integral
+x <- as.data.frame(seq(from = suppmin, to = suppmax, length.out = Ns+1 ))
+x<- x[-1,]  #  to avoid start at x=0
+
+df<- data.frame(x)
+df.final <- df
+
+```
+
+## Production function
+
+We consider the following Just-Pope production function: 
+$$ y = f(x)+ g(x)*\epsilon = c_0+ a x^\alpha + bx^\beta*\epsilon$$
+with a, b $\gt 0$, $\alpha \gt 0$ , $\beta \lt 0$ and $\epsilon$ a random shock shock assumed to be of mean 0. 
+
+### Production function parameters
+
+The parameters of the production function (for the benchmark scenario) were chosen such that the function fits real production data from France; that is: 
+
+```{r ProdParameters, echo = TRUE}
+# Production function parameters (Benchmark) - [ values may be changed here]
+
+c0 <- 0
+a <-  15
+alpha <- 0.30
+b <- 30
+beta <- -0.10
+```
+
+```{r}
+#Text for output 
+text.param.prod <-  paste0("Production function y =", ifelse(c0 == 0, "",paste(c0," + ")),
+                          a," * x**", alpha, " +",b,"* x**",beta," * eps" )
+```
+
+### Profit parameters
+
+Output is wheat and is measured in quintal (1 q = 0.1 t = 100 kg). We set the price of wheat (p) at 110 EUR/t or, equivalently, 11 EUR/q. We also definie the initial wealth, $w_0$ to be set at 500 EUR. The price of inputs is normalized to one.
+
+```{r ProfParameters,   echo = TRUE  }
+# Profit function parameters [values can be changed here]
+py <- 11      # Price ratio 
+w0 <- 500     # Initial wealth
+```
+These parameters may be changed, and  will vary in our simulations (Tables 2-5) 
+
+```{r CompProf}
+#Individual profit
+df.profMat <- data.frame(mapply(function(x, y) 
+  (w0 + py*(c0 +a * x^alpha + b * (x ^beta) *y) - x),
+  df,Epsilons$eps))
+
+# Computing the integral (expected profit)
+df.EprofMat <- data.frame(mapply(`*` , df.profMat, Epsilons$probeps))
+
+# Expected profit
+df.final$EProf <- rowSums(df.EprofMat,  na.rm=T)
+```
+
+
+```{r}
+#Graphics
+
+df.MeanProfMat <-  data.frame(mapply(function(x, y) 
+  (w0 + py*(c0 +a * x^alpha) - x),
+  df,Epsilons$eps))
+
+text.param.mean <-  paste("Mean production function y =", ifelse(c0 == 0, "",paste(c0,"+")),
+                          a," * x**", alpha,"( \U03F5 =0)" )
+
+# Computing the integral (expected profit)
+df.EMeanProfMat <- data.frame(mapply(`*` , df.MeanProfMat, Epsilons$probeps))
+
+# Expected profit
+df.plot <- df
+df.plot$MeanProf <- rowSums(df.EMeanProfMat,  na.rm=T)
+
+i.star <- which.max(df.plot$MeanProf)
+x.star  <- df.plot[i.star,"x"]
+EProf.star <- df.plot[i.star, "MeanProf"]
+
+    myalpha <- 0.8
+    # Main benchmark curve
+    main.plot <- ggplot(df.plot, aes(x, MeanProf) ) +
+      geom_line( colour = "pink", size=2, alpha= myalpha) +
+      ggtitle(label = paste("Expected profit (Initial wealth =", w0,")") ,
+              subtitle =  paste(text.param.mean, ", Price ratio = ", py)) +
+      coord_cartesian(ylim=c(w0, w0+1000), xlim =c(0,450)) +
+      labs( x= paste("Input use (EUR/ha)")  ,
+            y = "Profit (EUR)") +
+      theme_minimal()
+    
+   main.plot + 
+      geom_segment(aes(x = x.star, y = w0 + 30, 
+                       xend = x.star, yend = EProf.star),
+                   colour = "pink", alpha = myalpha, size = 1,
+                   linetype = "dashed", data = df.plot) +
+     geom_text(x= x.star + 30, y=  w0 + 30, 
+               label= paste("x* =", x.star), colour ="pink")
+    
+    
+
+```
+
+
+
+
+# Simulation results: Expected Utility framework 
+
+## Benchmark scenario
+In Table 1 we report the optimal level of input use, the risk premium, and the certainty equivalent (all measured in EUR for one hectare) under the risk neutrality assumption (rr = 0) and under risk aversion for four different levels of the coefficient of relative risk aversion (rr = 1, 2, 3 and 4). 
+
+```{r  LoopRisk , echo = TRUE }
+# The table 1 is constructed as a single loop  
+# over a list of risk aversion parameter values: [values can be changed here]
+r.list <- c(0,1,2,3,4)
+
+```
+
+**Table 1**
+
+```{r Table1 , include = TRUE, echo = FALSE, cache  = FALSE}
+# Initialising the result's data frame 
+res.CRRA<- data.frame()
+
+# We loop on the value of the parameter representing the coefficient of relative risk aversion
+for (i.r in seq_along(r.list))  {
+  
+  #Storing price ratio in a data frame (results) 
+  res.CRRA [1, "price ratio"] <- py
+
+  ## --  Computing the risk-neutral optimum -- ##
+    df.final0 <- df    # initialization
+    df.UMat0 <- map_df(df.profMat, U.CRRA, r = 0)
+  
+    # Computing the integral
+    df.EUMat0 <-  data.frame(mapply(`*` , df.UMat0, Epsilons$probeps))
+    df.final0$EU <- rowSums(df.EUMat0,  na.rm=T)
+  
+    # Risk neutral: Computing the index of the maximum; storing maximum Expected Utility and profit) 
+    i.star0 <- which.max(df.final0$EU)
+    x.star0  <- df.final0[i.star0,"x"]
+    EU.star0 <- df.final0[i.star0, "EU"]
+    EProf.star0 <- df.final0[i.star0, "EProf"]
+
+  ## -- End risk-neutral case for that value of price ratio -- ##
+  
+  # Computation of profit for current price ratio and current risk aversion parameter 
+  df.UMat <- map_df(df.profMat, U.CRRA, r = r.list[i.r])
+  # Computing the integral
+  df.EUMat <-  data.frame(mapply(`*` , df.UMat, Epsilons$probeps))
+  df.final$EU <- rowSums(df.EUMat,  na.rm=T) 
+
+  # Computing the index of the maximum; storing maximum Expected Utility and profit 
+  i.star <- which.max(df.final$EU)
+  x.star  <- df.final[i.star,"x"]
+  EU.star <- df.final[i.star, "EU"]
+  EProf.star <- df.final[i.star, "EProf"]
+  
+  # Share of input used for self-insurance (measured in percentage terms)
+  delta.x <- 100*(x.star - x.star0)/x.star
+
+  # Computing risk premium
+  ## -- Defining the optimization function
+    fopti.CRRA.r <- function(RP, ...){
+      abs(EU.star - U.CRRA(df.final[i.star,]$EProf - RP,r = r.list[i.r]))
+    }
+
+  # CRRA solution and risk premium (grid search between -100 and 500)
+  RP.sol <- optimize( fopti.CRRA.r, interval = c(-100,500), maximum = FALSE)
+  RP <- round(RP.sol$minimum, digits = 3)
+
+  ### Certainty equivalent
+  CE <- df.final[i.star,"EProf"] - RP
+
+  ## Putting results in data frame
+
+  res.CRRA[ 1, paste0("r = ",r.list[i.r])] <- round(x.star, digits = 0)
+  res.CRRA[ 2, paste0("r = ",r.list[i.r])] <-  round(delta.x, digits = 2)
+  res.CRRA[ 3, paste0("r = ",r.list[i.r])] <-  round(RP, digits = 0)
+  res.CRRA[ 4, paste0("r = ",r.list[i.r])] <-  round(CE, digits = 0)
+  res.CRRA[ 5, paste0("r = ",r.list[i.r])] <-  round(-100*RP/EProf.star, digits = 2)
+}
+
+rownames(res.CRRA) <- c( "X*","Input change", "RP",  "CE","RP/Prof*" )
+
+## Formatted output
+stargazer(res.CRRA,
+          summary = FALSE,
+          title = paste("CRRA (N.eps =", N.eps,"), Initial wealth = ", w0),
+          notes = paste0(text.param.prod,"  (Last run:", format(Sys.time(), "%Y-%m-%d"), ")"),
+          digits = 1,
+          type = 'text', out = paste0("Table1-", format(Sys.time(), "%Y-%m-%d")," .txt")
+)
+
+```
+
+
+## Sensitivity of input use to levels of relative risk aversion and price ratios
+
+```{r LoopPrice , echo = TRUE }
+# Table 2 is constructed as a double loop  [values can be changed here]
+# # First loop: 
+# values considered for the price ratio, py, are: 
+py.list <- c(13, 11, 9, 7)
+
+# Inner loop : 
+# The list of risk aversion parameter values is the same as in Table 1
+
+```
+
+**Table 2**
+
+```{r Table2 , include = TRUE, echo = FALSE, cache = FALSE}
+# Initializing data frame for results
+Simu.py <- data.frame()
+
+# Looping over price ratio 
+for (j in seq_along(py.list))  {
+    # Initializing temporay data frame
+    res.CRRA<- data.frame()
+
+    # Current price ratio 
+    py <- py.list[j]
+
+    #Individual profit
+    df.profMat <- data.frame(mapply(function(x, y) 
+      (w0 + py*(c0 + a * x^alpha + b * (x ^beta) *y) - x),
+      df,Epsilons$eps))
+
+    # Computing the integral (expected profit)
+    df.EprofMat <- data.frame(mapply(`*` , df.profMat, Epsilons$probeps))
+
+    # Expected profit
+    df.final$EProf <- rowSums(df.EprofMat,  na.rm=T)
+    
+    # Looping over risk aversion parameter
+    for (i.r in seq_along(r.list))  {
+      # Storing current price ratio
+      res.CRRA [1, "price ratio"] <- py
+
+      ## --- Computing the risk-neutral optimum for that price ratio -- ##
+        #Initialization
+        df.final0 <- df   
+        df.UMat0 <- map_df(df.profMat, U.CRRA, r = 0)
+        
+        # Computing the integral
+        df.EUMat0 <-  data.frame(mapply(`*` , df.UMat0, Epsilons$probeps))
+        df.final0$EU <- rowSums(df.EUMat0,  na.rm=T)
+  
+        # Computing the index of the maximum (r = 0 case)
+        i.star0 <- which.max(df.final0$EU)
+        x.star0  <- df.final0[i.star0,"x"]
+        EU.star0 <- df.final0[i.star0, "EU"]
+        EProf.star0 <- df.final0[i.star0, "EProf"]
+        
+      ## --- End risk-neutral case for that value of price ratio -- ##
+
+      ## Computing for all r.list values
+      df.UMat <- map_df(df.profMat, U.CRRA, r = r.list[i.r])
+      
+      # Computing the integral
+      df.EUMat <-  data.frame(mapply(`*` , df.UMat, Epsilons$probeps))
+      df.final$EU <- rowSums(df.EUMat,  na.rm=T)
+
+      # Computing the index of the maximum; storing maximum Expected Utility and profit
+      i.star <- which.max(df.final$EU)
+      x.star  <- df.final[i.star,"x"]
+      EU.star <- df.final[i.star, "EU"]
+      EProf.star <- df.final[i.star, "EProf"]
+      
+      # Share of input used for self-insurance
+      delta.x <- 100*(x.star - x.star0)/x.star
+
+      # Computing the risk premium
+      ## -- Defining the optimization function
+        fopti.CRRA.r <- function(RP, ...){
+          abs(EU.star - U.CRRA(df.final[i.star,]$EProf - RP,r = r.list[i.r]))
+        }
+
+      # CRRA solution and risk premium
+      RP.sol <- optimize( fopti.CRRA.r, interval = c(-100,500), maximum = FALSE)
+      RP <- round(RP.sol$minimum, digits = 3)
+
+      ###  Certainty equivalent 
+      CE <- df.final[i.star,"EProf"] - RP
+
+      ## Putting results in table for current risk parameter and price ratio values 
+      res.CRRA[ 1, paste0("r = ",r.list[i.r])] <- round(x.star, digits = 0)
+      res.CRRA[ 2, paste0("r = ",r.list[i.r])] <-  round(delta.x, digits = 2)
+      res.CRRA[ 3, paste0("r = ",r.list[i.r])] <-  round(RP, digits = 0)
+      res.CRRA[ 4, paste0("r = ",r.list[i.r])] <-  round(-100*RP/EProf.star, digits = 2)
+      res.CRRA[5, ] <- NA
+
+      rownames(res.CRRA) <- c( "X*","Input change", "RP","RP/Prof*", " " )
+
+    } #end loop over values of r
+
+    # Appending the results for the next loop 
+    Simu.py <-  rbind( Simu.py, res.CRRA)
+
+}  #end loop over price ratio, py
+
+
+## Formatted output
+stargazer(Simu.py,
+          summary = FALSE,
+          title = paste("CRRA (N.eps =", N.eps,"), Initial wealth = ", w0),
+          notes = paste0(text.param.prod,"  (Last run:", format(Sys.time(), "%Y-%m-%d"), ")"),
+          digits = 1,
+          type = 'text', out = paste0("Table2-", format(Sys.time(), "%Y-%m-%d")," .txt")
+          )
+
+
+```
+
+
+## Sensitivity of input use to levels of relative risk aversion and parameters of the mean yield function
+
+```{r LoopProd , echo = TRUE }
+# Table 3 is constructed as a double loop  [values can be changed here]
+# First loop: 
+# Cases proposed for the mean yield function parameters:
+#  Values are for a and alpha (resp.)
+case.prod.f <-        data.frame(c(15, 0.20))  # Case1
+case.prod.f <- cbind(case.prod.f,c(15, 0.25))  # Case2
+case.prod.f <- cbind(case.prod.f,c(15, 0.30 )) # Benchmark
+case.prod.f <- cbind(case.prod.f,c(10, 0.30 )) # Case4
+case.prod.f <- cbind(case.prod.f,c(18, 0.30 )) # Case5
+row.names(case.prod.f ) <- c("a", "alpha")
+
+# NB: Risk function parameters are fixed to: 
+b = 30
+beta = -0.10
+
+# Inner loop: 
+# Values considered for the risk aversion parameter, r:
+r.list <- c(0,1,2,3,4)
+
+# Invariant parameters (in this simulation)
+w0 <- 500
+py <- 11
+```
+
+**Table 3**
+
+```{r Table3 , include = TRUE, echo = FALSE, cache = FALSE}
+
+# Initializing
+Simu.prod.f <- data.frame()
+
+# Loop on mean yield function parameters (cases)
+for (j in 1:ncol(case.prod.f) )  {
+
+  # Current production function parameters
+  a = case.prod.f[1,j]
+  alpha = case.prod.f[2,j]
+
+  # Text stored for output presentation
+  param.prod.f <- paste0(ifelse(c0 == 0, "",paste(c0," + ")),a,"* x**", alpha )
+  param.prod.g <- paste0(b,"* x**",beta)
+  text.param.prod <-  paste0("Production function y = ",param.prod.f," + ",param.prod.g,"* eps"  )
+  
+  # Individual profit
+  df.profMat <- data.frame(mapply(function(x, y) (w0 + py*(c0 + a * x^alpha + b * (x ^beta) *y) - x),
+                                  df,Epsilons$eps))
+
+  # Computing the integral (expected profit)
+  df.EprofMat <- data.frame(mapply(`*` , df.profMat, Epsilons$probeps))
+
+  # Expected profit
+  df.final$EProf <- rowSums(df.EprofMat,  na.rm=T)
+  
+  # Looping over risk aversion parameter
+  res.CRRA<- data.frame()
+  for (i.r in seq_along(r.list))  {
+    res.CRRA [1, "Mean yield function"] <- paste0("f(x) = ",param.prod.f)
+
+    ## --- Computing the risk-neutral optimum for current parameter values -- ##
+      # Initialization
+      df.final0 <- df    
+      df.UMat0 <- map_df(df.profMat, U.CRRA, r = 0)
+      
+      # Computing the integral
+      df.EUMat0 <-  data.frame(mapply(`*` , df.UMat0, Epsilons$probeps))
+      df.final0$EU <- rowSums(df.EUMat0,  na.rm=T)
+  
+      # Computing the index of the maximum (r = 0 case)
+      i.star0 <- which.max(df.final0$EU)
+      x.star0  <- df.final0[i.star0,"x"]
+      EU.star0 <- df.final0[i.star0, "EU"]
+      EProf.star0 <- df.final0[i.star0, "EProf"]
+      
+    ## --- End risk-neutral case for for current parameter values -- ##
+
+    ## Computing for all  values in r.list
+    df.UMat <- map_df(df.profMat, U.CRRA, r = r.list[i.r])
+    
+    # Computing the integral
+    df.EUMat <-  data.frame(mapply(`*` , df.UMat, Epsilons$probeps))
+    df.final$EU <- rowSums(df.EUMat,  na.rm=T)
+
+    # Computing the index of the maximum; storing maximum Expected Utility and profit
+    i.star <- which.max(df.final$EU)
+    x.star  <- df.final[i.star,"x"]
+    EU.star <- df.final[i.star, "EU"]
+    EProf.star <- df.final[i.star, "EProf"]
+    
+    # Share of input used for self-insurance
+    delta.x <- 100*(x.star - x.star0)/x.star
+
+    # Computing the risk premium
+      ## -- Defining the optimization function
+      fopti.CRRA.r <- function(RP, ...){
+        abs(EU.star - U.CRRA(df.final[i.star,]$EProf - RP,r = r.list[i.r]))
+      }
+
+    # CRRA solution and risk premium
+    RP.sol <- optimize( fopti.CRRA.r, interval = c(-100,500), maximum = FALSE)
+    RP <- round(RP.sol$minimum, digits = 3)
+
+    ###  Certainty equivalent
+    CE <- df.final[i.star,"EProf"] - RP
+
+    ## Putting results in data frame
+    res.CRRA[ 1, paste0("r = ",r.list[i.r])] <- round(x.star, digits = 0)
+    res.CRRA[ 2, paste0("r = ",r.list[i.r])] <-  round(delta.x, digits = 2)
+    res.CRRA[ 3, paste0("r = ",r.list[i.r])] <-  round(RP, digits = 0)
+    res.CRRA[ 4, paste0("r = ",r.list[i.r])] <-  round(-100*RP/EProf.star, digits = 2)
+    res.CRRA[5, ] <- NA
+
+  } #end loop over values of r
+
+  rownames(res.CRRA) <- c( "X*","Input change", "RP","RP/Prof*", " " )
+
+  # Appending the results for the next loop  
+  Simu.prod.f  <-  rbind( Simu.prod.f , res.CRRA)
+
+}  #end loop over mean production function parameters
+
+## Formatted output
+stargazer(Simu.prod.f,
+          summary = FALSE,
+          title = paste("Price ratio =", py,", Initial wealth = ", w0),
+          notes = paste0("Production function = f(x) + ", param.prod.g,
+                         " (Last run:", format(Sys.time(), "%Y-%m-%d"), ")"),
+          digits = 1,
+          type = 'text', out = paste0("Table3-", format(Sys.time(), "%Y-%m-%d")," .txt")
+          )
+
+```
+
+# Simulation results: CPT framework
+
+
+```{r BenchmarkEUNeutral, echo = FALSE}
+# We need to compute some benchmark elements (EU framework) for future comparisons
+py <- 11
+# Initial wealth
+w0 <- 500
+
+# Production function parameters
+c0 <- 0
+a <- 15
+alpha <- 0.30
+b <- 30
+beta <- -0.10
+
+# Recording production function parameters information
+text.param.prod <-  paste0("Production function y =", ifelse(c0 == 0, "",paste(c0,"+")),
+                           a," * x**", alpha, " + ",b,"* x**",beta," * eps" )
+text.param.prod2 <- paste("Price ratio =",py,", Initial wealth =", w0 )
+
+####  Individual profit  ----
+
+df.profMat0 <- data.frame(mapply(function(x, y)
+  (w0 + py*(c0 + a * x^alpha + b * (x ^beta) *y) - x),
+  df,Epsilons$eps))
+
+## Computing the probabilistic profit
+
+df.ProbProfMat0 <- data.frame(mapply(`*` , df.profMat0, Epsilons$probeps))
+# Expected profit
+df.ExpectedProf0 = rowSums(df.ProbProfMat0,  na.rm=T)
+
+# Computing some reference values for base profit (to be used later)
+prof.25 <- round(quantile(df.ExpectedProf0, probs = 0.25),0)
+prof.50 <- round(quantile(df.ExpectedProf0, probs = 0.50),0)
+prof.max <- round(max(df.ExpectedProf0),0)
+
+```
+
+## Optimal quantity of input used and risk premium under various CPT scenarios
+
+```{r LoopCPT, echo = TRUE }
+# Table 4 is constructed as a double loop: [values can be changed here]
+
+# First Loop: 
+# CPT scenarios definition
+# Parameter values are (resp.): rr+, rr- ,lamda, gamma and delta
+scenarios <-      data.frame(c(0.12,0.12,2.25, 0.61,0.69 )) #Scenario 0 (KT)
+scenarios <- cbind(scenarios,c(0.12,0.12,2.25, 0.61,0.30 )) #Scenario 1
+scenarios <- cbind(scenarios,c(0.88,0.12,2.25, 0.61,0.69 )) #Scenario 2
+scenarios <- cbind(scenarios,c(0.88,0.12,2.25, 0.61,0.30 )) #Scenario 3
+scenarios <- cbind(scenarios,c(0.88,0.12,3.50, 0.61,0.30 )) #Scenario 4
+
+names(scenarios) <- c("KT", "Sc.1", "Sc.2", "Sc.3", "Sc.4")
+row.names(scenarios) <- c("rr+", "rr-", "lambda", "gamma", "delta")
+
+#Inner loop: Values considered for reference point, wref 
+wref.list <- c(0, prof.50, prof.max)
+
+```
+
+**Table 4**
+
+
+```{r Table4 , include = TRUE, echo = FALSE, cache = FALSE}
+
+# Initializing results
+results <- data.frame(matrix(ncol = ncol(scenarios),nrow = 2*length(wref.list),
+                             dimnames=list(NULL, names(scenarios))))
+
+##Looping over the scenarios (in column)
+for (j in 1:ncol(scenarios) )  {
+    # Current scenario index
+    sc.num <- j
+
+    # Inputting parameters for each scenario
+
+    rrplus.input <-  scenarios[c("rr+"), sc.num]   # Scenario 0 is in column 1
+    rrminus.input <- scenarios[c("rr-"), sc.num]
+    lambda.input <-  scenarios[c("lambda"), sc.num]
+    gamma.input <-   scenarios[c("gamma"), sc.num]
+    delta.input <-   scenarios[c("delta"), sc.num]
+
+    # Looping over the reference point values, wref
+    for (i in seq_along(wref.list))  {
+
+      ###  Reference point
+      wref.input <-   wref.list[i]  
+      text.param.KT <-  paste0("Ref. Point wref = ", wref.input)
+
+      ##  Calling the CPT optimizing function with current parameters
+      ## and using the Tversky and Kahneman (1992) value function
+
+      results.KT <- resultsKT(df.profit = df.profMat0,
+                                     # Reference point 
+                                     wref = wref.input,
+                                     # Curvature parameters
+                                     rrplus = rrplus.input,
+                                     rrminus = rrminus.input,
+                                     # Degree of loss aversion
+                                     lambda = lambda.input,
+                                     # Decision weight  parameters
+                                     delta = delta.input,
+                                     gamma = gamma.input
+                          )
+
+
+     # Computing difference with the risk-neutral optimal input
+      delta.x <- round(100*(results.KT$X.star - 264)/results.KT$X.star, 1)
+
+     # Storing current loop results (two lines) in the data frame
+      k <- 2*i -1
+      results[k, sc.num ] <- paste0(results.KT$X.star," (",delta.x, "%)")
+      results[k+1, sc.num ] <- paste0("[RP = ", round(results.KT$RP, 0), "]")
+
+    }  # end loop cases (wref values)
+
+} #end loop scenarios
+
+# Storing the results in a formatted data.frame
+Simu.Output <- rbind(scenarios, results)
+row.names(Simu.Output) <- c(row.names(scenarios) ,
+                            "x* (Ref = 0)", " -",
+                            "x*(Ref = Median)", "- ",
+                            "x* (Ref = Max)", " - ")
+
+## Formatted output
+values.profits <- paste(unlist(wref.list), collapse=', ')
+stargazer(Simu.Output,
+          summary = FALSE,
+          title = paste0("CPT", text.param.prod2, ", Refs (0, med., max) = resp. ", values.profits),
+          notes =  paste0(text.param.prod,"  (Last run:", format(Sys.time(), "%Y-%m-%d"), ")"),
+          digits = 1,
+          type = 'text', out = paste0("Table4-", format(Sys.time(), "%Y-%m-%d")," .txt")
+          )
+
+
+```
+
+## Sensitivity of input use and risk premium to pesticides-crop price ratio – CPT framework
+
+```{r loopPriceCPT, echo = TRUE}
+# Table 5 is constructed as a double loop: [values can be changed here]
+
+# First Loop: 
+# CPT Scenarios definition
+# -> We use here the same scenarios as in Table 4
+
+# Inner loop: 
+# Values considered for price ratio parameters
+py.list <- c(11, 13, 7)
+
+# We need here to recall the risk-neutral optimum for each price ratio (from Table 2)
+x.star.py <-Simu.py %>% filter(`price ratio` %in% py.list) %>% select( `price ratio`,`r = 0`)
+
+# Uncomment the next line to print the values of the risk-neutral optimum for each price ratio
+# x.star.py
+```
+
+**Table 5**
+
+```{r Table5 , include = TRUE, echo = FALSE, cache = FALSE}
+
+# Initializing results in data frames
+results.py <- data.frame(matrix(ncol = ncol(scenarios),nrow = 2*length(py.list),
+                             dimnames=list(NULL, names(scenarios))))
+prof.med.list <- ""
+
+
+## Looping over the scenarios defined for Table 4
+for (j in 1:ncol(scenarios) )  {
+  # Current scenario number
+  sc.num <- j
+
+  # Inputting parameters for current scenario
+  rrplus.input <-  scenarios[c("rr+"), sc.num]   
+  rrminus.input <- scenarios[c("rr-"), sc.num]
+  lambda.input <-  scenarios[c("lambda"), sc.num]
+  gamma.input <-   scenarios[c("gamma"), sc.num]
+  delta.input <-   scenarios[c("delta"), sc.num]
+
+  # looping over price ratio, py
+  for (i in seq_along(py.list)) {
+
+    # Curent price ratio
+    py <- py.list[i]
+    # Current risk-neutral optimum X0* for current price ratio py
+    x0.star.py <- x.star.py[which( x.star.py$`price ratio` == py),2]
+    # Text for output 
+    text.param.KT <-  paste0("Price ratio = ", py, " -RefX0 = ", x0.star.py )
+    
+    ####  Individual profit  ----
+    df.profMat0 <- data.frame(mapply(function(x, y)
+      (w0 + py*(c0 + a * x^alpha + b * (x ^beta) *y) - x),
+      df,Epsilons$eps))
+
+    ## Computing the probabilistic profit
+
+    df.ProbProfMat0 <- data.frame(mapply(`*` , df.profMat0, Epsilons$probeps))
+    # Expected profit
+    df.ExpectedProf0 = rowSums(df.ProbProfMat0,  na.rm=T)
+
+    # Computing the reference point (set at the median profit) for the current scenario and price ratio
+    prof.med <- round(quantile(df.ExpectedProf0, probs = 0.50),0)
+
+    # Recording the current values for text output
+    prof.med.list <- ifelse(j == ncol(scenarios),paste0(prof.med.list, " ", prof.med), " ")
+
+    ##  Calling the CPT optimizing function with current parameters
+    ## and using the Tversky and Kahneman (1992) value function
+
+    results.KT <- resultsKT(df.profit = df.profMat0,
+                            # Reference point 
+                            wref = prof.med,
+                             # Curvature parameters
+                            rrplus = rrplus.input,
+                            rrminus = rrminus.input,
+                            # Degree of loss aversion
+                            lambda = lambda.input,
+                            # Weight function parameters
+                            delta = delta.input,
+                            gamma = gamma.input
+    )
+
+
+    # Computing difference with the risk-neutral optimum
+    delta.x <- round(100*(results.KT$X.star - x0.star.py)/results.KT$X.star, 1)
+
+   
+    # Storing current loop results (two lines) in the data frame
+    k <- 2*i -1
+    results.py[k, sc.num ] <- paste0(results.KT$X.star," (",delta.x, "%)")
+    results.py[k+1, sc.num ] <- paste0("[RP = ", results.KT$RP, "]")
+
+  }  # end loop cases (py values)
+} #end loop scenarios
+
+#### Results (in a data.frame) ###
+
+Simu.Output.py <- rbind(scenarios, results.py)
+row.names(Simu.Output.py) <- c(row.names(scenarios) ,
+                               paste("x* (ratio 1-",py.list[1],")" ) , paste(" X0* ref. =", x.star.py[1, 1]),
+                               paste("x* (ratio 1-",py.list[2],")" ) , paste(" X0* ref. =", x.star.py[2,1]),
+                               paste("x* (ratio 1-",py.list[3],")" ) , paste(" X0* ref.=", x.star.py[3,1]))
+
+
+## Formatted output
+py.list.values <- paste(unlist(py.list), collapse=', ')
+
+stargazer(Simu.Output.py,
+          summary = FALSE,
+          title = paste0("CPT: Initial wealth =", w0,
+                         ", Ref.Point = med. profit (py = ", py.list.values,") = resp.",
+                         prof.med.list ),
+          notes =  paste0(text.param.prod," (Last run:", format(Sys.time(), "%Y-%m-%d"), ")"),
+          digits = 1,
+          type = 'text', out = paste0("Table5-", format(Sys.time(), "%Y-%m-%d")," .txt")
+)
+
+
+```
+
+
+# Appendix
+
+## Sensitivity of input use and risk premium to levels of relative risk aversion and parameters of the risk function (EU framework) 
+
+```{r LoopG, echo=TRUE}
+# Table A4 is constructed as a double loop: [values may be changed Here]
+
+# First Loop: 
+# Cases proposed for risk function parameters b and beta
+
+case.prod.g <-       data.frame(c(20, -0.1))  # Case1
+case.prod.g<- cbind(case.prod.g,c(40, -0.1))  # Case2
+case.prod.g<- cbind(case.prod.g,c(30, -0.1 )) # Benchmark
+case.prod.g<- cbind(case.prod.g,c(30, -0.2 )) # Case4
+
+# NB: Mean production function parameters are fixed
+C0 <- 0
+a <- 15
+alpha <- 0.30
+
+# Inner loop: 
+# risk aversion parameters as in Tables 1, 2 and 3
+r.list <- c(0,1,2,3,4) 
+
+# Invariant (in this simulation) parameters
+w0 <- 500
+py <- 11
+
+```
+
+**Table A4**
+
+```{r  TableA4, include = TRUE, echo = FALSE, cache = FALSE}
+
+# Initializing
+Simu.prod.g <- data.frame()
+
+for (j in 1:ncol(case.prod.g) )  {
+
+  # Risk function parameters for the current case
+  b = case.prod.g[1,j]
+  beta = case.prod.g[2,j]
+
+  # text for output table
+  param.prod.f <- paste0(ifelse(c0 == 0, "",paste(c0," + ")), a,"* x**", alpha )
+  param.prod.g <- paste0(b,"* x**",beta)
+  text.param.prod <-  paste0("Production function y = ",param.prod.f," + ",param.prod.g,"* eps"  )
+
+  #Individual profit
+  df.profMat <- data.frame(mapply(function(x, y) (w0 + py*( c0 + a * x^alpha + b * (x ^beta) *y) - x),
+                                  df,Epsilons$eps))
+
+  # Computing the integral (expected profit)
+  df.EprofMat <- data.frame(mapply(`*` , df.profMat, Epsilons$probeps))
+
+  # Expected profit
+  df.final$EProf <- rowSums(df.EprofMat,  na.rm=T)
+
+  res.CRRA<- data.frame()
+  # Loop over the risk parameters
+  for (i.r in seq_along(r.list))  {
+    res.CRRA [1, "Risk function"] <- paste0("g(x) = ",param.prod.g)
+
+    ## --- Computing the risk-neutral optimum for that case -- ##
+      # Initialisation
+      df.final0 <- df    
+      df.UMat0 <- map_df(df.profMat, U.CRRA, r = 0)
+      
+      # Computing the integral
+      df.EUMat0 <-  data.frame(mapply(`*` , df.UMat0, Epsilons$probeps))
+      df.final0$EU <- rowSums(df.EUMat0,  na.rm=T)
+  
+
+      # Computing the index of the maximum (r = 0 case)
+      i.star0 <- which.max(df.final0$EU)
+      x.star0  <- df.final0[i.star0,"x"]
+      EU.star0 <- df.final0[i.star0, "EU"]
+      EProf.star0 <- df.final0[i.star0, "EProf"]
+      
+    ## --- End risk-neutral case for that value of price ratio -- ##
+
+    ## Computing for all r.list values
+    df.UMat <- map_df(df.profMat, U.CRRA, r = r.list[i.r])
+    # Computing the integral
+
+    df.EUMat <-  data.frame(mapply(`*` , df.UMat, Epsilons$probeps))
+    df.final$EU <- rowSums(df.EUMat,  na.rm=T)
+
+
+    # Computing the index of the maximum; storing maximum Expected Utility and profit
+    i.star <- which.max(df.final$EU)
+    x.star  <- df.final[i.star,"x"]
+    EU.star <- df.final[i.star, "EU"]
+    EProf.star <- df.final[i.star, "EProf"]
+
+    # Share of input used for self-insurance
+    delta.x <- 100*(x.star - x.star0)/x.star
+
+    # Computing risk premium
+      ## -- Defining the optimization function for that case
+    fopti.CRRA.r <- function(RP, ...){
+      abs(EU.star - U.CRRA(df.final[i.star,]$EProf - RP,r = r.list[i.r]))
+    }
+
+    
+    # CRRA solution and risk premium
+    RP.sol <- optimize( fopti.CRRA.r, interval = c(-100,500), maximum = FALSE)
+    RP <- round(RP.sol$minimum, digits = 3)
+
+    ###  Certainty equivalent
+    CE <- df.final[i.star,"EProf"] - RP
+
+    ## Putting results in table for current risk parameter and risk function parameters
+    res.CRRA[ 1, paste0("r = ",r.list[i.r])] <- round(x.star, digits = 0)
+    res.CRRA[ 2, paste0("r = ",r.list[i.r])] <-  round(delta.x, digits = 2)
+    res.CRRA[ 3, paste0("r = ",r.list[i.r])] <-  round(RP, digits = 0)
+    res.CRRA[ 4, paste0("r = ",r.list[i.r])] <-  round(-100*RP/EProf.star, digits = 2)
+    res.CRRA[5, ] <- NA
+
+  } #end loop over risk aversion values, r
+
+  rownames(res.CRRA) <- c( "X*","Input change", "RP","RP/Prof*", " " )
+
+
+  # Appending the results for the next loop  
+  Simu.prod.g  <-  rbind( Simu.prod.g , res.CRRA)
+
+}  #end loop over risk function parameters, g()
+
+
+## Formatted output
+stargazer(Simu.prod.g,
+          summary = FALSE,
+          title = paste("Price ratio =", py,", Initial wealth = ", w0),
+          notes = paste0("Production function =", param.prod.f,"+ g(x)*eps (Last run:", format(Sys.time(), "%Y-%m-%d"), ")"),
+          digits = 1,
+          type = 'text', out = paste0("TableA4-", format(Sys.time(), "%Y-%m-%d")," .txt")
+          )
+
+```
+
+## Sensitivity to initial wealth
+
+
+```{r LoopW0, echo=TRUE}
+# Table A5 is constructed as a double loop: [values may be changed Here]
+
+# First Loop: 
+# Simulation values for initial wealth, w0:
+w0.list <- c(500, 1000, 1500, 5000)
+
+# Inner loop: 
+# risk aversion parameters as in Tables 1, 2 and 3
+r.list <- c(0,1,2,3,4)
+
+#Invariant (in this simulation) parameters
+#production function are as in Benchmark case
+c0 <- 0
+a <- 15
+alpha <- 0.30
+b <- 30
+beta <- -0.10
+
+#Price ratio
+py <- 11
+```
+
+
+```{r TableA5, include = TRUE, echo = FALSE, cache = FALSE}
+# Initializing 
+Simu.w0 <- data.frame()
+
+
+for (j in seq_along(w0.list))  {
+  #initializing
+  res.CRRA<- data.frame()
+  
+  # Profit function parameters
+  w0 <- w0.list[j]   
+  
+  
+  # text for output table
+  param.prod.f <- paste0(ifelse(c0 == 0, "",paste(c0," + ")), a,"* x**", alpha )
+  param.prod.g <- paste0(b,"* x**",beta)
+  text.param.prod <-  paste0("Production function y = ",param.prod.f," + ",param.prod.g,"* eps"  )
+
+  #Individual profit
+  df.profMat <- data.frame(mapply(function(x, y) (w0 + py*( c0 + a * x^alpha + b * (x ^beta) *y) - x),
+                                  df,Epsilons$eps))
+  
+  # Computing the integral  (Expected profit)
+  df.EprofMat <- data.frame(mapply(`*` , df.profMat, Epsilons$probeps))
+  
+  # Expected Profit
+  df.final$EProf <- rowSums(df.EprofMat,  na.rm=T)
+  
+  for (i.r in seq_along(r.list))  {
+    res.CRRA [1, "Initial Wealth"] <- w0
+    
+     ## --- Computing the risk-neutral optimum for that price ratio -- ##
+      #Initialization
+      df.final0 <- df
+      
+      df.UMat0 <- map_df(df.profMat, U.CRRA, r = 0)
+      # Computing the integral 
+      
+      df.EUMat0 <-  data.frame(mapply(`*` , df.UMat0, Epsilons$probeps))
+      df.final0$EU <- rowSums(df.EUMat0,  na.rm=T)
+      
+      # Computing the index of the maximum (r = 0 case)
+      i.star0 <- which.max(df.final0$EU)
+      x.star0  <- df.final0[i.star0,"x"]
+      EU.star0 <- df.final0[i.star0, "EU"]
+      EProf.star0 <- df.final0[i.star0, "EProf"]
+    ## --- End risk-neutral case for that value of price ratio -- ## 
+    
+    
+    ## Computing for all  r.list values 
+    df.UMat <- map_df(df.profMat, U.CRRA, r = r.list[i.r])
+    
+    # Computing the integral 
+    df.EUMat <-  data.frame(mapply(`*` , df.UMat, Epsilons$probeps))
+    df.final$EU <- rowSums(df.EUMat,  na.rm=T)
+    
+    # Computing the index of the maximum; storing maximum Expected Utility and profit
+    i.star <- which.max(df.final$EU)
+    x.star  <- df.final[i.star,"x"]
+    EU.star <- df.final[i.star, "EU"]
+    EProf.star <- df.final[i.star, "EProf"]
+    
+    # Share of input used for self-insurance
+    delta.x <- 100*(x.star - x.star0)/x.star
+    
+     # Computing the risk premium
+      ## -- Defining the optimization function for current value of r 
+      fopti.CRRA.r <- function(RP, ...){
+        abs(EU.star - U.CRRA(df.final[i.star,]$EProf - RP,r = r.list[i.r]))
+      }
+    
+    # CRRA solution and Risk premium  
+    RP.sol <- optimize( fopti.CRRA.r, interval = c(-100,500), maximum = FALSE)
+    RP <- round(RP.sol$minimum, digits = 3)
+    
+    ###  Certainty equivalent
+    CE <- df.final[i.star,"EProf"] - RP
+    
+    ## Puting results in table for current risk parameter and initial wealth values
+    
+    res.CRRA[ 1, paste0("r = ",r.list[i.r])] <- round(x.star, digits = 0)
+    res.CRRA[ 2, paste0("r = ",r.list[i.r])] <-  round(delta.x, digits = 2)
+    res.CRRA[ 3, paste0("r = ",r.list[i.r])] <-  round(RP, digits = 0)
+    #res.CRRA[ 4, paste0("r = ",r.list[i.r])] <-  round(CE, digits = 0)
+    res.CRRA[ 4, paste0("r = ",r.list[i.r])] <-  round(-100*RP/EProf.star, digits = 2)
+    res.CRRA[5, ] <- NA
+    
+    rownames(res.CRRA) <- c( "X*","Input change", "RP","RP/Prof*", " " )
+    
+  } #end loop over values of r
+  
+  # Appending the results for the next loop
+  Simu.w0 <-  rbind( Simu.w0, res.CRRA)
+  
+}  #end loop over initial wealth    
+
+## formatted output 
+stargazer(Simu.w0,
+          summary = FALSE,
+          title = paste("CRRA (N.eps =", N.eps,"), Price ratio = ", py),
+          notes = paste0(text.param.prod,"  (Last run:", format(Sys.time(), "%Y-%m-%d"), ")"),
+          digits = 1,
+          type = 'text', out = paste0("TableA5-", format(Sys.time(), "%Y-%m-%d")," .txt")
+)
+
+```
+
+
