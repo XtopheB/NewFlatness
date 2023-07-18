@@ -5,6 +5,9 @@ All the programs were written to be reproducible at the time of the publication,
 
 ### Files
 
-The *.Rmd* file is the main program generating all the simulations and figures of the paper, while the R-shiny programs *ui.R* and *server.R*  provide an interactive webpage to test how the choice of aversion forms and parameters affect different outcomes. As for any shiny app, the two programs must be in the same directory. 
+The *.Rmd* file is the main program generating all the simulations and figures of the paper, while the R programs are fucntions used in this markdown file. All files must be in the same directory. 
 
 **Enjoy!** 
+
+PS: There is also a shiny app in anothe GitHub repo. This provides an interactive webpage to test how the choice of aversion forms and parameters affect different outcomes. This Shiny application was primilary used for us to "understand" some risk-aversion properties, the interface is then not polishged (but should work still). 
+See the repo "New Flatness"
