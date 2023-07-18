@@ -10,4 +10,4 @@ The *.Rmd* file is the main program generating all the simulations and figures o
 **Enjoy!** 
 
 PS: There is also a shiny app in anothe GitHub repo. This provides an interactive webpage to test how the choice of aversion forms and parameters affect different outcomes. This Shiny application was primilary used for us to "understand" some risk-aversion properties, the interface is then not polishged (but should work still). 
-See the repo "New Flatness"
+See the repo "Flatness" and/or the shiny app https://xtophedataviz.shinyapps.io/Flatness2/
