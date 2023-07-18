@@ -1,7 +1,7 @@
 # Programs used for the paper "Do Risk Preferences Really Matter? The Case of Pesticide Use in Agriculture ",
 *Christophe Bontemps, Douadia Bougherara, Céline Nauges*, published in  Environmental Modeling and Assessment, 2021 
 
-All the programs were written to be reproducible at the time of the publication, provide that the packages are installed, and should run smoothly^[ These programs were written in 2021 and I will not provide any support if this is not the case anymore (sorry!)] 
+All the programs were written to be reproducible at the time of the publication, provide that the packages are installed, and should run smoothly^[ These programs were written in 2019 and I will not provide any support if this is not the case anymore (sorry!)] 
 
 ### Files
 
